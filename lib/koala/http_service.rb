@@ -2,6 +2,7 @@ require 'faraday'
 require 'koala/http_service/multipart_request'
 require 'koala/http_service/uploadable_io'
 require 'koala/http_service/response'
+require 'faraday/adapter/em_synchrony'
 
 module Koala
   module HTTPService
@@ -20,7 +21,7 @@ module Koala
     DEFAULT_MIDDLEWARE = Proc.new do |builder|
       builder.use Koala::HTTPService::MultipartRequest
       builder.request :url_encoded
-      builder.adapter Faraday.default_adapter
+      builder.use Faraday::Adapter::EMSynchrony
     end
 
     # The address of the appropriate Facebook server.
@@ -81,6 +82,45 @@ module Koala
       Koala::Utils.debug "#{verb.upcase}: #{path} params: #{params.inspect}"
       Koala::HTTPService::Response.new(response.status.to_i, response.body, response.headers)
     end
+
+
+    def self.make_asynch_request(path, args, verb, options = {},&block)
+      # if the verb isn't get or post, send it as a post argument
+      args.merge!({:method => verb}) && verb = "post" if verb != "get" && verb != "post"
+
+      # turn all the keys to strings (Faraday has issues with symbols under 1.8.7) and resolve UploadableIOs
+      params = args.inject({}) {|hash, kv| hash[kv.first.to_s] = kv.last.is_a?(UploadableIO) ? kv.last.to_upload_io : kv.last; hash}
+      
+      # figure out our options for this request
+      request_options = {:params => (verb == "get" ? params : {})}.merge(http_options || {}).merge(process_options(options))
+      request_options[:use_ssl] = true if args["access_token"] # require https if there's a token
+      if request_options[:use_ssl]
+        ssl = (request_options[:ssl] ||= {})
+        ssl[:verify] = true unless ssl.has_key?(:verify)
+      end
+
+      client = EventMachine::HttpRequest.new(server(request_options))
+      em_opts = {:path=>path,:query => params}	      
+      if verb == "get"
+        http = client.aget(em_opts) 
+      elsif verb == "put" 
+        http = client.aput(em_opts,&block)
+      elsif verb == "post" 
+        http = client.apost(em_opts,&block)
+      elsif verb == "delete"
+        http = client.adelete(em_opts,&block)
+      elsif verb == "head"
+        http = client.ahead(em_opts,&block)
+      elsif verb == "patch"
+        http = client.apatch(em_opts,&block)    
+      elsif verb == "options"
+        http = client.aoptions(em_opts,&block)    
+      end
+      http.callback {block.call(http)}
+      http.errback {p http.error; p client}
+      http 
+    end
+        
 
     # Encodes a given hash into a query string.
     # This is used mainly by the Batch API nowadays, since Faraday handles this for regular cases.

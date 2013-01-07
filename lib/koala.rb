@@ -51,6 +51,10 @@ module Koala
     http_service.make_request(path, args, verb, options)
   end
 
+  def self.make_asynch_request(path, args, verb, options = {},&block)
+    http_service.make_asynch_request(path, args, verb, options,&block)
+  end
+
   # we use Faraday as our main service, with mock as the other main one
   self.http_service = HTTPService
 end

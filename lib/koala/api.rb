@@ -18,6 +18,43 @@ module Koala
       include GraphAPIMethods
       include RestAPIMethods
 
+      
+      def build_api_req(path, args = {}, verb = "get", options = {},success_block, &error_checking_block)
+        # Fetches the given path in the Graph API.
+        args["access_token"] = @access_token || @app_access_token if @access_token || @app_access_token
+
+        # add a leading /
+        path = "/#{path}" unless path =~ /^\//
+        
+        cb = lambda do |result|
+        #  p result
+          resp = Koala::HTTPService::Response.new(result.response_header.status, result.response,result.headers)
+          parsed = parse_api_req(resp,options,&error_checking_block)
+          success_block.call(parsed)
+        end
+
+        # make the request via the provided service
+        request = Koala.make_asynch_request(path, args, verb, options,&cb)      
+      end
+      
+      def parse_api_req(result,options,&error_checking_block)
+        if result.status.to_i >= 500
+          raise Koala::Facebook::ServerError.new(result.status.to_i, result.body)
+        end
+      
+        yield result if error_checking_block
+        
+        # if we want a component other than the body (e.g. redirect header for images), return that
+        if component = options[:http_component]
+          component == :response ? result : result.send(options[:http_component])
+        else
+          # parse the body as JSON and run it through the error checker (if provided)
+          # Note: Facebook sometimes sends results like "true" and "false", which aren't strictly objects
+          # and cause MultiJson.load to fail -- so we account for that by wrapping the result in []
+          MultiJson.load("[#{result.body.to_s}]")[0]
+        end        
+      end
+      
       # Makes a request to the appropriate Facebook API.
       # @note You'll rarely need to call this method directly.
       #

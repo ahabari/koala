@@ -465,16 +465,18 @@ module Koala
       #
       # @return the result from Facebook
       def graph_call(path, args = {}, verb = "get", options = {}, &post_processing)
-        result = api(path, args, verb, options) do |response|
+        success_cb = lambda do |result|          
+          # turn this into a GraphCollection if it's pageable
+          result = GraphCollection.evaluate(result, self)
+          # now process as appropriate for the given call (get picture header, etc.)
+          post_processing ? post_processing.call(result) : result        
+        end
+        
+        result = build_api_req(path, args, verb, options,success_cb) do |response|
           error = check_response(response.status, response.body)
           raise error if error
         end
 
-        # turn this into a GraphCollection if it's pageable
-        result = GraphCollection.evaluate(result, self)
-
-        # now process as appropriate for the given call (get picture header, etc.)
-        post_processing ? post_processing.call(result) : result
       end
 
       private

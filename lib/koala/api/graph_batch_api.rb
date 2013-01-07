@@ -46,7 +46,7 @@ module Koala
           batch_op.to_batch_params(access_token)
         })
 
-        batch_result = graph_call_outside_batch('/', args, 'post', http_options) do |response|
+         batch_result = graph_call_outside_batch('/', args, 'post', http_options) do |response|
           unless response
             # Facebook sometimes reportedly returns an empty body at times
             # see https://github.com/arsduo/koala/issues/184
@@ -91,8 +91,8 @@ module Koala
             end
           end
         end
+        return batch_result
       end
-
     end
   end
 end
